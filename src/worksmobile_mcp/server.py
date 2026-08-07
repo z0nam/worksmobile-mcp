@@ -139,6 +139,57 @@ def works_search(query: str, drive_type_filters: str | None = None,
 
 
 @mcp.tool()
+def works_users_list(user: str | None = None, dept: str | None = None,
+                     include_suspended: bool = False) -> list:
+    """List tenant members (flattened: email, name, dept(s), position, status flags)."""
+    from . import directory as d
+    rows = [d.flat(u) for u in d.users_all(user)]
+    if dept:
+        rows = [r for r in rows if any(dept in x for x in r["depts"])]
+    if not include_suspended:
+        rows = [r for r in rows if not r["isSuspended"]]
+    return rows
+
+
+@mcp.tool()
+def works_user_find(query: str, user: str | None = None) -> list:
+    """Find members by any substring (name, email, dept, employee number)."""
+    from . import directory as d
+    q = query.lower()
+    return [d.flat(u) for u in d.users_all(user, include_deleted=True)
+            if q in str(u).lower()][:20]
+
+
+@mcp.tool()
+def works_directory_audit(user: str | None = None, ignore_emails: list | None = None) -> dict:
+    """Audit account hygiene (on-leave-but-active, no org unit, stale pending, admins).
+
+    Also returns `dormant_rules` and `coverage`: if the tenant leaves a source field
+    empty, that check CANNOT fire — an empty finding list is not a clean bill of health.
+    """
+    from . import directory as d
+    users = d.users_all(user)
+    return {"findings": d.findings(users, ignore=ignore_emails or []),
+            "dormant_rules": d.dormant_rules(users),
+            "coverage": d.coverage(users)}
+
+
+@mcp.tool()
+def works_directory_drift(roster_path: str, user: str | None = None,
+                          name_column: str | None = None, own_domains: str | None = None,
+                          ignore_emails: list | None = None) -> dict:
+    """Reconcile WORKS accounts against an external roster CSV/TSV (email column auto-detected).
+
+    only_works = accounts with no roster entry (suspected ex-employees still holding
+    mail/drive access); only_roster = people with no account, on our own domains.
+    """
+    from . import directory as d
+    users = d.users_all(user)
+    return d.drift(users, d.load_roster(roster_path), name_col=name_column,
+                   ignore=ignore_emails or [], domain=own_domains)
+
+
+@mcp.tool()
 def works_api_call(method: str, path: str, body_json: str | None = None,
                    user: str | None = None, confirm: bool = False) -> dict:
     """Raw WORKS API escape hatch (path under https://www.worksapis.com/v1.0). Non-GET requires confirm=true."""

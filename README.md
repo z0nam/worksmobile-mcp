@@ -10,6 +10,8 @@ User OAuth). This project covers the *admin* plane that they don't:
 - **shared-drive governance**: list drives, inspect `accessibleRange`/`permissionType`,
   grant/revoke drive- and folder-level permissions, toggle folder inheritance (`enable`/`disable`)
 - **share-create** ("shared with me" shortcuts), My Drive scaffolding, upload/download, search
+- **directory audit**: account-hygiene rules and reconciliation against an external roster —
+  find ex-employees who still hold live mail/drive access
 
 > Not affiliated with NAVER / WORKS MOBILE Corp. "NAVER WORKS", "LINE WORKS" and
 > worksmobile.com are their trademarks/properties. Official API docs:
@@ -47,6 +49,12 @@ Config resolution: process env (`WORKS_*`) > `$WORKS_ENV_FILE` > `./.env` >
 ## CLI
 
 ```bash
+worksmobile doctor                              # what credentials/scopes actually work
+worksmobile users --dept 연구                    # members (joint appointments preserved)
+worksmobile find 홍길동                          # search by any substring
+worksmobile audit --ignore shared-accounts.txt  # account-hygiene findings
+worksmobile drift roster.tsv --name-col name    # reconcile against an external roster
+
 worksmobile drives                              # list shared drives
 worksmobile drive @2001000000xxxxxx             # accessibleRange / permissionType
 worksmobile ls --sd @2001000000xxxxxx           # list files
@@ -94,9 +102,24 @@ worksmobile-mcp --transport streamable-http --port 8123
 | `works_share_create` / `works_share_delete` | ⚠ | "shared with me" shortcuts (My Drive only) |
 | `works_sharedfolders_list` | | a member's received shares |
 | `works_search` | | drive search |
+| `works_users_list` / `works_user_find` | | tenant members (needs `user.read`) |
+| `works_directory_audit` | | account-hygiene findings + dormant-check report |
+| `works_directory_drift` | | reconcile accounts against an external roster |
 | `works_api_call` | ⚠ | raw API escape hatch |
 
 ⚠ = requires `confirm=true`.
+
+### Directory audit: dormant checks
+
+`works_directory_audit` returns `dormant_rules` alongside `findings`. A rule is dormant when
+the field it reads is empty across the whole tenant — e.g. if nobody's `leaveOfAbsence` is
+ever set, "on leave but not suspended" can never fire. **An empty findings list is not a
+clean bill of health**, so the tool says which checks were powerless instead of implying
+everything passed. `coverage` shows the fill rate per field.
+
+This matters in practice: on the tenant this was built against, `employeeNumber` was 0/136
+and `hiredDate` 1/136 — the HR fields simply were not populated, which is exactly the kind
+of thing an audit tool must tell you rather than paper over.
 
 ## API notes (hard-won)
 

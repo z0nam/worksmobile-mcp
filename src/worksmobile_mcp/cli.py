@@ -95,6 +95,22 @@ def main():
     p.add_argument("method"); p.add_argument("path")
     p.add_argument("--body"); p.add_argument("--yes", action="store_true")
 
+    add("doctor", "diagnose credentials, granted scopes and endpoint access")
+
+    p = add("users", "list members")
+    p.add_argument("--dept"); p.add_argument("--all", action="store_true")
+
+    p = add("find", "find members by any substring")
+    p.add_argument("query")
+
+    p = add("audit", "audit account hygiene (also reports dormant checks)")
+    p.add_argument("--ignore", help="file of emails to skip, one per line")
+
+    p = add("drift", "reconcile against an external roster CSV/TSV")
+    p.add_argument("roster"); p.add_argument("--name-col")
+    p.add_argument("--domain", help="extra own domains, comma-separated")
+    p.add_argument("--ignore")
+
     a = ap.parse_args()
     try:
         if a.cmd == "token":
@@ -140,6 +156,52 @@ def main():
             _print(core.sharedfolders_list(a.user))
         elif a.cmd == "search":
             _print(core.search(a.query, a.filters, a.user))
+        elif a.cmd == "doctor":
+            env = core.load_env()
+            print("== config ==")
+            for k in ("WORKS_CLIENT_ID", "WORKS_SERVICE_ACCOUNT", "WORKS_PRIVATE_KEY",
+                      "WORKS_DEFAULT_USER"):
+                print(f"  {k:<22} {'set' if env.get(k) else 'MISSING'}")
+            print("\n== granted scopes ==")
+            granted = []
+            for s in ("file", "user.read", "mail.read", "mail", "orgunit.read",
+                      "group.read", "calendar.read", "bot"):
+                try:
+                    core.get_token(scope=s, delegated_user=env.get("WORKS_DEFAULT_USER"))
+                    granted.append(s); print(f"  {s:<14} yes")
+                except Exception:
+                    print(f"  {s:<14} -")
+            print(f"  -> usable: {' '.join(granted) or 'none'}")
+            print("\n== endpoints ==")
+            t = core.token_for(a.user)
+            for path in ("/users", "/sharedrives", "/orgunits", "/groups"):
+                st, _ = core.call("GET", path, t)
+                print(f"  {path:<14} {'ok' if st == 200 else st}")
+        elif a.cmd in ("users", "find", "audit", "drift"):
+            from . import directory as d
+            ign = []
+            if getattr(a, "ignore", None):
+                ign = [l.split("#")[0].strip() for l in open(a.ignore, encoding="utf-8")]
+            if a.cmd == "users":
+                rows = [d.flat(u) for u in d.users_all(a.user)]
+                if a.dept:
+                    rows = [r for r in rows if any(a.dept in x for x in r["depts"])]
+                if not a.all:
+                    rows = [r for r in rows if not r["isSuspended"]]
+                _print(rows)
+            elif a.cmd == "find":
+                q = a.query.lower()
+                _print([d.flat(u) for u in d.users_all(a.user, include_deleted=True)
+                        if q in str(u).lower()][:20])
+            elif a.cmd == "audit":
+                users = d.users_all(a.user)
+                _print({"findings": d.findings(users, ignore=ign),
+                        "dormant_rules": d.dormant_rules(users),
+                        "coverage": d.coverage(users)})
+            else:
+                users = d.users_all(a.user)
+                _print(d.drift(users, d.load_roster(a.roster), name_col=a.name_col,
+                               ignore=ign, domain=a.domain))
         elif a.cmd == "call":
             if a.method.upper() != "GET":
                 _confirm(a, f"[raw {a.method.upper()}] {a.path}")
