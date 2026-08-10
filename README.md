@@ -19,6 +19,23 @@ User OAuth). This project covers the *admin* plane that they don't:
 
 ## Safety design
 
+> ### 🔑 Read this before you run it anywhere but your own machine
+>
+> This is not a per-user integration. The credential it takes is a **delegated service
+> account that can act as any member of your tenant** — read anyone's drive, change anyone's
+> sharing. Treat the private key like a domain-admin key, because that is what it is.
+>
+> **Do not paste these credentials into third-party MCP hosting, an "install/deploy this
+> server" button, or a hosted inspector**, however convenient. Those run the server on
+> someone else's machine, and handing them this key hands over the whole tenant. Directory
+> and marketplace listings of this repo are automated crawls, not endorsements of any
+> deployment model — the only configuration this project supports is **local stdio, on the
+> administrator's own machine**.
+>
+> If you genuinely need the HTTP transport, bind it to localhost and put real
+> authentication in front of it. Key compromise here is not recoverable by rotating a
+> password: until the key is revoked in the Developer Console, the holder is every employee.
+
 WORKS Drive permission APIs have sharp edges. This tool encodes them:
 
 - **Every mutating operation requires explicit confirmation** — CLI: `--yes`
@@ -79,14 +96,15 @@ claude mcp add worksmobile -- worksmobile-mcp
 { "mcpServers": { "worksmobile": { "command": "worksmobile-mcp" } } }
 ```
 
-Streamable HTTP (remote / chat surfaces):
+Streamable HTTP — **for a locally bound endpoint you front with your own auth**, not for
+handing to a hosting provider (see the box at the top):
 
 ```bash
-worksmobile-mcp --transport streamable-http --port 8123
+worksmobile-mcp --transport streamable-http --host 127.0.0.1 --port 8123
 ```
 
-> ⚠️ The delegated service account can act as **any member**. If you expose the HTTP
-> transport beyond localhost, put real authentication in front of it, or don't.
+> ⚠️ Whichever transport you pick, the process holds a tenant-wide admin credential —
+> run it where you would run a domain-admin shell, and nowhere else.
 
 ### Tools
 
