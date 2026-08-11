@@ -209,3 +209,86 @@ def drift(users: list, roster: dict, name_col: str | None = None,
 def domain_counts(users: list) -> dict:
     return dict(Counter((flat(u)["email"] or "").split("@")[-1].lower()
                         for u in users if flat(u)["email"]))
+
+
+def member_footprint(email: str, admin_user: str | None = None,
+                     rosters: dict | None = None) -> dict:
+    """Everything this API can tell you about one member's reach.
+
+    The reference query for offboarding and transfers. `rosters` maps a label to
+    {"path": ..., "key": "email"|"name"} for external cross-checks.
+
+    Order matters operationally: run this BEFORE suspending the account. Once the
+    account is suspended, delegation to it fails and the My Drive / received-folder
+    sections below become unavailable.
+    """
+    from . import core
+    users = users_all(admin_user, include_deleted=True)
+    me = next((u for u in users if (flat(u)["email"] or "").lower() == email.lower()), None)
+    if not me:
+        raise RuntimeError(f"no WORKS account for {email}")
+    f = flat(me)
+
+    roster_hits = {}
+    for label, cfg in (rosters or {}).items():
+        try:
+            r = load_roster(cfg["path"], key=cfg.get("key", "email"))
+            probe = f["name"].strip() if cfg.get("key") == "name" else email.lower()
+            roster_hits[label] = probe in r
+        except Exception as e:
+            roster_hits[label] = f"error: {e}"
+
+    ftok = core.token_for(admin_user, scope="file")
+    st, r = core.call("GET", "/sharedrives", ftok)
+    drives = (r if isinstance(r, list) else r.get("sharedrives", [])) if st == 200 else []
+    master_of, granted, open_to_all = [], [], []
+    for d in drives:
+        sd, nm = d.get("sharedriveId"), d.get("name", "")
+        # Masters do NOT appear in /permissions — they live on the drive object.
+        if any(m.get("id") in (email, f["userId"]) for m in (d.get("masters") or [])):
+            master_of.append({"name": nm, "sharedriveId": sd})
+        if d.get("accessibleRange") in ("DOMAIN", "TENANT"):
+            open_to_all.append({"name": nm, "range": d.get("accessibleRange"),
+                                "permissionType": d.get("permissionType")})
+            continue
+        _, pr = core.call("GET", f"/sharedrives/{sd}/permissions", ftok)
+        for p in (pr.get("permissions", []) if isinstance(pr, dict) else []):
+            if p.get("userId") in (email, f["userId"]) or p.get("email") == email:
+                granted.append({"name": nm, "sharedriveId": sd, "type": p.get("type"),
+                                "permissionId": p.get("permissionId")})
+
+    own = {"available": True}
+    try:
+        utok = core.token_for(email, scope="file")
+        items, cursor = [], None
+        while True:
+            params = {"count": 200}
+            if cursor:
+                params["cursor"] = cursor
+            _, rr = core.call("GET", "/users/me/drive/files", utok, params=params)
+            items += (rr or {}).get("files", [])
+            cursor = (rr or {}).get("responseMetaData", {}).get("nextCursor")
+            if not cursor:
+                break
+        _, sf = core.call("GET", "/users/me/drive/sharedfolders", utok)
+        own = {"available": True, "root_items": len(items),
+               "shared_out": [{"fileName": x["fileName"], "fileId": x["fileId"]}
+                              for x in items if x.get("shared")],
+               "received": (sf or {}).get("sharedFolders", [])}
+    except Exception as e:
+        own = {"available": False,
+               "reason": f"{e}",
+               "hint": "If the account is already suspended/deleted, delegation fails. "
+                       "This is why the footprint must be collected BEFORE suspension."}
+
+    return {
+        "account": f,
+        "rosters": roster_hits,
+        "drives": {"master_of": master_of, "granted": granted, "open_to_everyone": open_to_all},
+        "own_drive": own,
+        "blind_spots": BLIND_SPOTS + [
+            {"area": "folder-level permissions",
+             "note": "There is no reverse index: you cannot ask 'which folders does X have "
+                     "permission on'. Check specific folders with the folder permissions tool."},
+        ],
+    }

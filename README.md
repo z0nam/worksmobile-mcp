@@ -123,6 +123,7 @@ worksmobile-mcp --transport streamable-http --host 127.0.0.1 --port 8123
 | `works_users_list` / `works_user_find` | | tenant members (needs `user.read`) |
 | `works_directory_audit` | | account-hygiene findings + dormant-check report |
 | `works_directory_drift` | | reconcile accounts against an external roster |
+| `works_member_footprint` | | one member's full reach — the offboarding query |
 | `works_api_call` | ⚠ | raw API escape hatch |
 
 ⚠ = requires `confirm=true`.
@@ -143,6 +144,18 @@ of thing an audit tool must tell you rather than paper over.
 bites is **delegated administrators** — `isAdministrator` is true only for SUPER admins, so an
 account that is a sub-admin in the console still reports `false`. Enumerating "who has admin
 rights" from this API alone will silently miss them; do that in the admin console.
+
+### Offboarding: collect the footprint *before* you suspend
+
+`works_member_footprint` answers "what can this person reach" in one call. Two things it
+encodes that are easy to get wrong:
+
+- **Order.** Suspending the account first is the intuitive move and it destroys your ability
+  to investigate: delegation to a suspended account fails, so their My Drive contents and
+  received folders become unreachable. Collect first, suspend second.
+- **Drive masters are invisible in `/permissions`.** They live on the shared-drive object's
+  `masters[]`. A master can grant permissions and change drive settings, so missing them in
+  a handover leaves the drive effectively ownerless — the tool reports them separately.
 
 ## API notes (hard-won)
 

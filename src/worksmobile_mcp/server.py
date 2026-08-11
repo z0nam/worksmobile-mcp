@@ -191,6 +191,28 @@ def works_directory_drift(roster_path: str, user: str | None = None,
 
 
 @mcp.tool()
+def works_member_footprint(email: str, user: str | None = None,
+                           gw_roster_path: str | None = None,
+                           slack_roster_path: str | None = None) -> dict:
+    """Everything the API can tell you about one member's reach — the offboarding/transfer query.
+
+    Covers account state, external roster cross-checks, shared-drive access (drive MASTER
+    roles included — masters never appear in the permissions list), their own My Drive
+    folders shared outward, and folders shared to them.
+
+    Run this BEFORE suspending an account: once suspended, delegation fails and most of
+    this becomes unavailable.
+    """
+    from . import directory as d
+    rosters = {}
+    if gw_roster_path:
+        rosters["hr"] = {"path": gw_roster_path, "key": "name"}
+    if slack_roster_path:
+        rosters["chat"] = {"path": slack_roster_path, "key": "email"}
+    return d.member_footprint(email, user, rosters)
+
+
+@mcp.tool()
 def works_api_call(method: str, path: str, body_json: str | None = None,
                    user: str | None = None, confirm: bool = False) -> dict:
     """Raw WORKS API escape hatch (path under https://www.worksapis.com/v1.0). Non-GET requires confirm=true."""
