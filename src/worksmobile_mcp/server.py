@@ -171,6 +171,7 @@ def works_directory_audit(user: str | None = None, ignore_emails: list | None = 
     users = d.users_all(user)
     return {"findings": d.findings(users, ignore=ignore_emails or []),
             "dormant_rules": d.dormant_rules(users),
+            "blind_spots": d.BLIND_SPOTS,
             "coverage": d.coverage(users)}
 
 

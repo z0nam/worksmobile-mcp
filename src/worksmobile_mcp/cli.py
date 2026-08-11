@@ -197,6 +197,7 @@ def main():
                 users = d.users_all(a.user)
                 _print({"findings": d.findings(users, ignore=ign),
                         "dormant_rules": d.dormant_rules(users),
+                        "blind_spots": d.BLIND_SPOTS,
                         "coverage": d.coverage(users)})
             else:
                 users = d.users_all(a.user)

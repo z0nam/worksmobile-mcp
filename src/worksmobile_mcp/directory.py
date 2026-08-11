@@ -96,15 +96,25 @@ RULES = [
     ("PENDING_STALE", "medium",
      "Pending/awaiting activation for more than 30 days",
      lambda f: (f["isPending"] or f["isAwaiting"]) and (_age_days(f["hiredDate"]) or 0) > 30),
-    ("ADMIN", "info",
-     "Holds administrator rights — review periodically",
+    ("SUPER_ADMIN", "info",
+     "Holds super-administrator rights — review periodically",
      lambda f: f["isAdministrator"]),
+]
+
+# Questions the API cannot answer at all. Always reported alongside findings so an
+# empty result is never mistaken for full coverage.
+BLIND_SPOTS = [
+    {"area": "delegated (sub-)administrators",
+     "note": "`isAdministrator` is true only for SUPER admins. Sub-administrators holding "
+             "a permission group are not exposed anywhere in the API (observed 2026-08-11: "
+             "an account that is a sub-admin in the console still reports false). "
+             "Enumerate admin rights in the WORKS admin console instead."},
 ]
 
 # Field each rule depends on. If the tenant leaves it empty, that rule is DORMANT —
 # reporting "no findings" would be a lie, so callers must surface this.
 RULE_FIELDS = {"LEAVE_ACTIVE": "onLeave", "PENDING_STALE": "hiredDate",
-               "NO_DEPT": None, "ADMIN": None}
+               "NO_DEPT": None, "SUPER_ADMIN": None}
 
 
 def coverage(users: list) -> dict:

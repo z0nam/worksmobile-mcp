@@ -139,6 +139,11 @@ This matters in practice: on the tenant this was built against, `employeeNumber`
 and `hiredDate` 1/136 — the HR fields simply were not populated, which is exactly the kind
 of thing an audit tool must tell you rather than paper over.
 
+`blind_spots` covers the harder case: questions the API cannot answer *at all*. The one that
+bites is **delegated administrators** — `isAdministrator` is true only for SUPER admins, so an
+account that is a sub-admin in the console still reports `false`. Enumerating "who has admin
+rights" from this API alone will silently miss them; do that in the admin console.
+
 ## API notes (hard-won)
 
 - `accessibleRange` is 3-valued: `TENANT` / `DOMAIN` / `MEMBER`. New drives default to
