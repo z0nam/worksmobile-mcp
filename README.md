@@ -17,6 +17,17 @@ User OAuth). This project covers the *admin* plane that they don't:
 > worksmobile.com are their trademarks/properties. Official API docs:
 > <https://developers.worksmobile.com/>
 
+> ### 🙋 Just want to use WORKS yourself? This is the wrong tool.
+>
+> If you want an AI agent to read *your own* mail, calendar, drive or tasks, **stop here** —
+> see **[docs/END_USER_SETUP.md](docs/END_USER_SETUP.md)**. That path takes minutes, needs no
+> admin rights, and only ever touches your own account.
+>
+> This project is for **tenant administrators**. It authenticates with a delegated service
+> account that can act as *any member of the organization*, which is why it needs credentials
+> a normal member cannot get. If your Developer Console says *"you do not have access"*,
+> that is not a setup problem to solve — it is the boundary working as intended.
+
 ## Safety design
 
 > ### 🔑 Read this before you run it anywhere but your own machine
