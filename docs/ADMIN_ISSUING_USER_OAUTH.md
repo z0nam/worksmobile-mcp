@@ -53,6 +53,23 @@ e.g. for a drive-read/write + mail-read app using `nworks`:
 nworks login --user --scope "file file.read mail.read"
 ```
 
+### Narrow "app access" — it is not about who may use the app
+
+The registration has an **app access** setting that defaults to *all members*, and its
+wording is easy to misread as "everyone may use this app". It is not: the console spells it
+out as who may **view, edit and delete the app registration**. Who may *use* the app is a
+separate matter, settled by each member's OAuth consent — narrowing this changes nothing for
+your users.
+
+Set it to the restricted option and name yourself. Left open, anyone who can reach the
+Developer Console can read this app's Client Secret, **add scopes to it**, or delete it. The
+scope case is the quiet one: widen the scopes on a shared app and every subsequent consent
+inherits them, with nothing in any user's flow to signal the change.
+
+The console itself is admin-gated, so the exposure is bounded today. It stops being bounded
+the moment you grant console access to someone — which is exactly the request that tends to
+arrive later.
+
 Reuse the same app for later requests. Do not create one app per person — that multiplies
 the credentials you have to track for no benefit.
 
