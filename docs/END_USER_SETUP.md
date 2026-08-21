@@ -74,9 +74,11 @@ Cautions:
 
 ## Where the secret should actually go
 
-`nworks login --user` asks for the Client ID and Secret interactively when they are not
-already configured, so the simplest safe route is to run that yourself and paste the secret
-at the CLI prompt. It never enters the agent conversation that way.
+Run the login **yourself, in your own terminal**, and supply the secret there — that way it
+never enters the agent conversation. Check your client's current docs for how it takes the
+value: `nworks` accepts `NWORKS_CLIENT_SECRET` as an environment variable, which is the
+reliable route. Do not count on an interactive prompt: an agent runs commands without a
+terminal attached, so anything that would prompt fails instead of asking.
 
 If you are wiring the MCP server instead, put it in the server's `env` block
 (`NWORKS_CLIENT_SECRET`) — the package's own docs treat the Client ID as
