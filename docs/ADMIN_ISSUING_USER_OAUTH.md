@@ -28,6 +28,15 @@ their own data.
      is untrusted text that the agent reads, and send is the action it can be steered into.
      Prefer `mail.read` alone unless someone has a concrete need to send.
 
+   One caveat on that last point, so you weigh it honestly: **if your members already
+   automate mail through another channel** — an IMAP/SMTP-based agent tool, a Gmail
+   connector — then "the agent can send mail as this person" is already true, and withholding
+   this scope does not change it. What the `mail` scope still adds that those paths do not is
+   **server-side settings management, forwarding included**. Judge it on that, not on the
+   sending. And check whether the WORKS mail scope is simply redundant for them: if mail is
+   handled elsewhere, leave it out because it is unnecessary, which is a cleaner reason than
+   calling it dangerous.
+
    Scopes are a property of the app, so this list is the union of what every user of the app
    may request. Widen later when someone shows a need — re-login picks up new scopes.
 4. Do **not** enable service-account delegation on this app. Keep the end-user app and any
