@@ -47,26 +47,44 @@ Ground rules:
   account, and do not use delegation. No private key is involved.
 - If you already installed `worksmobile-mcp`, do not use it here — that is an
   administrator tool and it will not work with my permissions. Unregister it if present.
-- My organization's shared app credentials:
-      Client ID:     <paste>
-      Client Secret: <paste>
-  The redirect URL http://localhost:9876/callback is already registered.
+- Client ID: <paste>
+- **The Client Secret is deliberately not in this prompt.** I will enter it myself.
+  If the login needs it, tell me where to put it and wait — do not ask me to paste the
+  value into this conversation, do not print it, and do not write it into any file you
+  create.
+- The redirect URL http://localhost:9876/callback is already registered.
 
 Tasks:
 1. Install `nworks` (github.com/yjcho9317/nworks, on npm) — a CLI and MCP server for
    NAVER WORKS covering calendar, drive, mail, tasks and boards.
-2. Read its documentation, configure it with the credentials above, and run the browser
-   User OAuth login.
+2. Read its documentation and configure it with the Client ID. Run the browser User OAuth
+   login, **requesting only the scopes this app has** — ask me for the exact scope string if
+   I have not given you one. Requesting scopes the app lacks fails the whole login with
+   `invalid_scope`.
 3. Register it as an MCP server for this agent.
 4. Verify: check the auth status and run one read-only command (for example, list my
    calendar events). Show me the result.
 
 Cautions:
-- Never commit the Client Secret. Keep config under my home directory and check
-  .gitignore.
+- Never commit the Client Secret, echo it back to me, or write it into a file you author.
+  Keep config under my home directory and check .gitignore.
 - If you conclude that a service account or admin rights are required, stop and tell me
   instead of proceeding.
 ```
+
+## Where the secret should actually go
+
+`nworks login --user` asks for the Client ID and Secret interactively when they are not
+already configured, so the simplest safe route is to run that yourself and paste the secret
+at the CLI prompt. It never enters the agent conversation that way.
+
+If you are wiring the MCP server instead, put it in the server's `env` block
+(`NWORKS_CLIENT_SECRET`) — the package's own docs treat the Client ID as
+agent-configurable and the Secret as env-only, for the same reason.
+
+Why bother, when a desktop client's secret is not truly secret? Because this one is
+**shared across your whole organization**. A leak does not only expose you: it lets someone
+stand up an OAuth consent screen that looks like your organization's official app.
 
 ## Notes
 
