@@ -151,6 +151,25 @@ This matters in practice: on the tenant this was built against, `employeeNumber`
 and `hiredDate` 1/136 — the HR fields simply were not populated, which is exactly the kind
 of thing an audit tool must tell you rather than paper over.
 
+### Reconciliation: absence from one roster is not evidence
+
+`works_directory_drift` returns `only_works` — accounts with no entry in the roster you
+passed. **That is a signal, not proof of departure.** Every roster omits some population:
+an HR register may not carry visiting researchers at all; a chat directory cannot hold
+people who were never issued corporate mail. Reading "not in this list" as "has left" is
+how a current employee loses their account — which is exactly what happened once, and why
+the tool now works this way.
+
+Pass `corroborating_rosters` ({label: path}) with every other roster you have. Rows found
+elsewhere come back with `seen_in` populated and should be dropped from suspicion. Each
+roster is indexed by **email, phone and name**, because no single key is enough — in the
+real case that motivated this, the member had no phone on their account and no corporate
+mail, so only the name matched.
+
+One trap worth knowing: normalising Korean mobile numbers by stripping `82` is wrong.
+Many records carry the country code *and* the trunk zero (`+82 010-…`), so stripping alone
+yields `00…` and matches nothing — 40% of one tenant's numbers. Use `directory.norm_phone`.
+
 `blind_spots` covers the harder case: questions the API cannot answer *at all*. The one that
 bites is **delegated administrators** — `isAdministrator` is true only for SUPER admins, so an
 account that is a sub-admin in the console still reports `false`. Enumerating "who has admin

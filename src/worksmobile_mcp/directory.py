@@ -292,3 +292,84 @@ def member_footprint(email: str, admin_user: str | None = None,
                      "permission on'. Check specific folders with the folder permissions tool."},
         ],
     }
+
+
+def norm_phone(v: str | None) -> str:
+    """Normalise a Korean mobile number for joining across sources.
+
+    Stripping `82` alone is NOT enough: many records carry the country code *and* the
+    trunk zero (`+82 010-1234-5678`), which naive stripping turns into `00…` — matching
+    nothing. Observed on 40% of one tenant's numbers.
+    """
+    import re
+    d = re.sub(r"\D", "", v or "")
+    if d.startswith("82"):
+        d = d[2:]
+    while d.startswith("00"):
+        d = d[1:]
+    if d and not d.startswith("0"):
+        d = "0" + d
+    return d
+
+
+def _index_roster(path: str) -> dict:
+    """Index one roster file by every key it offers: email, phone, name."""
+    import csv as _csv, json as _json, pathlib as _pl
+    pth = _pl.Path(path).expanduser()
+    if pth.suffix == ".json":
+        d = _json.loads(pth.read_text(encoding="utf-8"))
+        rows = d if isinstance(d, list) else (d.get("contacts") or d.get("people") or [])
+    else:
+        with open(pth, newline="", encoding="utf-8") as fh:
+            first = fh.readline(); fh.seek(0)
+            rows = list(_csv.DictReader(fh, delimiter="\t" if "\t" in first else ","))
+    idx = {"email": {}, "phone": {}, "name": {}}
+    if not rows:
+        return idx
+    cols = list(rows[0])
+    pick = lambda *t: next((c for c in cols if c and any(x in c.lower() for x in t)), None)
+    ec, pc = pick("mail"), pick("mobile", "phone", "tel")
+    nc = pick("name", "krnnm", "이름", "성명")
+    for r in rows:
+        if ec and (r.get(ec) or "").strip():
+            idx["email"][r[ec].strip().lower()] = r
+        if pc and norm_phone(r.get(pc)):
+            idx["phone"][norm_phone(r.get(pc))] = r
+        if nc and (r.get(nc) or "").strip():
+            idx["name"][r[nc].strip()] = r
+    return idx
+
+
+def corroborate(rows: list, rosters: dict) -> list:
+    """Check "missing" accounts against OTHER rosters before calling anyone a leaver.
+
+    Every roster has a population it simply does not cover — an HR register may omit
+    visiting researchers entirely, a chat directory cannot hold people with no corporate
+    mail. **Absence from one source is a signal, not evidence.** Treating it as evidence
+    is how a current employee's account gets deleted; that happened once, which is why
+    this exists.
+
+    Each roster is indexed by email, phone AND name, and probed with whatever the account
+    actually has — no single key suffices. (Real case: a member had no phone on the account
+    and no corporate mail, so only the name matched.)
+
+    `rosters` maps label -> file path. Adds `seen_in` to each row.
+    """
+    idx = {}
+    for label, path in (rosters or {}).items():
+        try:
+            idx[label] = _index_roster(path)
+        except Exception:
+            idx[label] = {"email": {}, "phone": {}, "name": {}}
+    for r in rows:
+        seen = []
+        probes = (("email", (r.get("email") or "").lower()),
+                  ("phone", norm_phone(r.get("cellPhone"))),
+                  ("name", (r.get("name") or "").strip()))
+        for label, ix in idx.items():
+            for key, val in probes:
+                if val and val in ix[key]:
+                    seen.append(f"{label}({key})")
+                    break
+        r["seen_in"] = seen
+    return rows

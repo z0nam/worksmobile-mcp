@@ -178,16 +178,33 @@ def works_directory_audit(user: str | None = None, ignore_emails: list | None = 
 @mcp.tool()
 def works_directory_drift(roster_path: str, user: str | None = None,
                           name_column: str | None = None, own_domains: str | None = None,
-                          ignore_emails: list | None = None) -> dict:
+                          ignore_emails: list | None = None,
+                          corroborating_rosters: dict | None = None) -> dict:
     """Reconcile WORKS accounts against an external roster CSV/TSV (email column auto-detected).
 
-    only_works = accounts with no roster entry (suspected ex-employees still holding
-    mail/drive access); only_roster = people with no account, on our own domains.
+    only_works = accounts with no roster entry; only_roster = people with no account, on
+    our own domains.
+
+    **Pass `corroborating_rosters` ({label: path}) whenever you have other rosters.**
+    Absence from one roster is not evidence of departure — rosters omit whole categories
+    of people, and acting on a single source has already cost one current employee their
+    account. Corroborated rows come back with `seen_in` populated.
     """
     from . import directory as d
     users = d.users_all(user)
-    return d.drift(users, d.load_roster(roster_path), name_col=name_column,
-                   ignore=ignore_emails or [], domain=own_domains)
+    result = d.drift(users, d.load_roster(roster_path), name_col=name_column,
+                     ignore=ignore_emails or [], domain=own_domains)
+    if corroborating_rosters:
+        d.corroborate(result["only_works"], corroborating_rosters)
+        result["corroboration_note"] = (
+            "Entries with a non-empty seen_in were found in another roster and are NOT "
+            "leavers. Absence from a single roster is not evidence — every roster omits "
+            "some population.")
+    else:
+        result["corroboration_note"] = (
+            "No corroborating rosters given. only_works is a signal, NOT evidence of "
+            "departure: this roster may simply not cover these people.")
+    return result
 
 
 @mcp.tool()
