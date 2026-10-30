@@ -95,7 +95,23 @@ def main():
     p.add_argument("method"); p.add_argument("path")
     p.add_argument("--body"); p.add_argument("--yes", action="store_true")
 
-    add("doctor", "diagnose credentials, granted scopes and endpoint access")
+    add("doctor", "diagnose credentials, granted scopes, endpoints and SCIM provisioning")
+
+    p = add("suspend", "block a member's login (SCIM; reversible, data kept) [--yes]")
+    p.add_argument("email"); p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--yes", action="store_true")
+
+    p = add("activate", "restore a suspended member's login (SCIM) [--yes]")
+    p.add_argument("email"); p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--yes", action="store_true")
+
+    p = add("member-create", "create a member (SCIM; org unit must be set in console) [--yes]")
+    p.add_argument("email"); p.add_argument("--family", required=True)
+    p.add_argument("--given", required=True)
+    p.add_argument("--personal-email",
+                   help="personal address for password registration — REQUIRED on "
+                        "domains without SSO (sent as emails[type=other])")
+    p.add_argument("--yes", action="store_true")
 
     p = add("users", "list members")
     p.add_argument("--dept"); p.add_argument("--all", action="store_true")
@@ -156,6 +172,19 @@ def main():
             _print(core.sharedfolders_list(a.user))
         elif a.cmd == "search":
             _print(core.search(a.query, a.filters, a.user))
+        elif a.cmd in ("suspend", "activate"):
+            from . import scim
+            want = a.cmd == "activate"
+            if a.dry_run:
+                _print({"would": a.cmd, "email": a.email, "changed": False})
+            else:
+                _confirm(a, f"[SCIM {a.cmd}] {a.email}"
+                            + ("" if want else " — login blocked; data kept, reversible"))
+                _print(scim.user_set_active(a.email, want))
+        elif a.cmd == "member-create":
+            from . import scim
+            _confirm(a, f"[SCIM create] {a.email} ({a.family}{a.given}) — a real seat")
+            _print(scim.user_create(a.email, a.family, a.given, a.personal_email))
         elif a.cmd == "doctor":
             env = core.load_env()
             print("== config ==")
@@ -173,10 +202,24 @@ def main():
                     print(f"  {s:<14} -")
             print(f"  -> usable: {' '.join(granted) or 'none'}")
             print("\n== endpoints ==")
+            ok = True
             t = core.token_for(a.user)
             for path in ("/users", "/sharedrives", "/orgunits", "/groups"):
                 st, _ = core.call("GET", path, t)
                 print(f"  {path:<14} {'ok' if st == 200 else st}")
+            print("\n== SCIM provisioning (account state) ==")
+            from . import scim
+            sc = scim.status()
+            print(f"  {scim.TOKEN_KEY:<22} {'set' if sc['configured'] else 'not set'}")
+            print(f"  /scim/v2/Users         {'ok' if sc['usable'] else sc.get('status', '-')}")
+            print(f"  -> {sc['detail']}")
+            # A token that is configured but does not answer is a broken setup, not a
+            # footnote. Reporting "ok" and exiting 0 here would let an automated health
+            # check wave through a credential that cannot perform a suspension.
+            if sc["configured"] and not sc["usable"]:
+                ok = False
+            if not ok:
+                sys.exit(1)
         elif a.cmd in ("users", "find", "audit", "drift"):
             from . import directory as d
             ign = []

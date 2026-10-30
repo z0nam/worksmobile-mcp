@@ -12,6 +12,8 @@ User OAuth). This project covers the *admin* plane that they don't:
 - **share-create** ("shared with me" shortcuts), My Drive scaffolding, upload/download, search
 - **directory audit**: account-hygiene rules and reconciliation against an external roster —
   find ex-employees who still hold live mail/drive access
+- **account state**: suspend / restore / create members over SCIM — the one thing the
+  Directory API cannot do, on a credential that cannot permanently delete anyone
 
 > Not affiliated with NAVER / WORKS MOBILE Corp. "NAVER WORKS", "LINE WORKS" and
 > worksmobile.com are their trademarks/properties. Official API docs:
@@ -71,6 +73,12 @@ mkdir -p ~/.config/worksmobile
 cp .env.example ~/.config/worksmobile/.env   # then fill in values
 ```
 
+3. *Only if you need to change account state* (suspend/restore/create): in the same
+   console create a **Provisioning app**, enable **SCIM**, and issue its **Long-Lived
+   Token** into `WORKS_SCIM_TOKEN`. This is a second, separate credential — see
+   [Account state](#account-state-the-scim-plane) for why it is separate and why that
+   is a feature.
+
 Config resolution: process env (`WORKS_*`) > `$WORKS_ENV_FILE` > `./.env` >
 `~/.config/worksmobile/.env`.
 
@@ -91,6 +99,11 @@ worksmobile grant @2001000000xxxxxx --target pm@corp.com --type WRITE --folder F
 worksmobile share FID --owner host@corp.com --to pm@corp.com --type WRITE --yes
 worksmobile download FID --sd @2001000000xxxxxx -o report.hwp
 worksmobile call GET /users/me/drive/files      # raw API escape hatch
+
+worksmobile suspend alum@corp.com --yes         # block login (reversible, data kept)
+worksmobile activate alum@corp.com --yes        # restore login
+worksmobile member-create new@corp.com --family Kim --given Minji \
+    --personal-email minji@gmail.com --yes      # personal mail required without SSO
 ```
 
 All read commands accept `--user someone@corp.com` to act as that member.
@@ -135,6 +148,9 @@ worksmobile-mcp --transport streamable-http --host 127.0.0.1 --port 8123
 | `works_directory_audit` | | account-hygiene findings + dormant-check report |
 | `works_directory_drift` | | reconcile accounts against an external roster |
 | `works_member_footprint` | | one member's full reach — the offboarding query |
+| `works_scim_status` | | is the provisioning plane usable (separate token) |
+| `works_user_suspend` / `works_user_activate` | ⚠ | block / restore login (reversible) |
+| `works_user_create` | ⚠ | create a member (occupies a licensed seat) |
 | `works_api_call` | ⚠ | raw API escape hatch |
 
 ⚠ = requires `confirm=true`.
@@ -187,6 +203,64 @@ encodes that are easy to get wrong:
   `masters[]`. A master can grant permissions and change drive settings, so missing them in
   a handover leaves the drive effectively ownerless — the tool reports them separately.
 
+### Account state: the SCIM plane
+
+Suspending an account is not available on the credential the rest of this package uses.
+The Directory API exposes `isSuspended` as **read-only**, so for a long time "suspend the
+leaver" was a thing a human did in the console — which, on the tenant this was built
+against, meant it was *never done*: 0 of 136 accounts were suspended while ex-members kept
+live mail and drive.
+
+The write lives on a different API family, reached with its own Long-Lived Token:
+
+```
+PATCH /scim/v2/Users/{id}   {"op": "replace", "path": "active", "value": false}
+```
+
+**Keeping it on a separate credential is the safety property, not an inconvenience.**
+
+- This token **cannot permanently delete a member.** Even SCIM's `DELETE /Users/{id}` only
+  deactivates and preserves the data. The Directory `user` scope, by contrast, ships a real
+  `DELETE /users` that erases someone outright — and that is the operation which, in the
+  incident behind this repo's reconciliation warnings, cost a current employee their
+  account. Granting `user` scope to get suspension would hand the automation an
+  irreversible verb it has no business holding. Granting SCIM gives it exactly the
+  reversible one it needs.
+- `works_user_suspend` **re-reads `active` after the write** and fails loudly if the value
+  did not change. A 2xx is not proof; login state is not something to report as done on
+  the strength of a status code.
+- It refuses `*.serviceaccount@` addresses. Service accounts sit in the same member list as
+  people, and suspending the one your own automation authenticates as takes the tooling
+  down with it.
+- `userName` is resolved by lookup, never guessed: the SCIM path id is not documented to
+  equal the Directory `userId`. Zero matches and two matches are reported differently —
+  two accounts sharing a `userName` is an alarm, not an empty result.
+
+Two more things the API does not make obvious:
+
+- **Creating a member needs a personal email on domains without SSO.** `emails` with
+  `type: other` is where the password-registration mail goes, and such a member is created
+  *inactive* until that registration completes. Omitting it there does not lose a field,
+  it fails the creation — so `--personal-email` / `personal_email` exists and is worth
+  asking the user for rather than guessing.
+- **`active` is not a required response field and its default is `true`.** So a re-read
+  that simply does not mention it says *nothing* about login state, and coercing that
+  silence with `bool()` would read it as "suspended" — the exact opposite of the default.
+  `get_active` demands an explicit boolean and raises otherwise: a verification step that
+  invents the answer it was built to check is worse than no verification.
+
+Two traps worth stating plainly:
+
+- **Leave of absence is a different axis from login.** `leaveOfAbsence` is a console-only
+  marker, not a SCIM attribute, and it does **not** block login. Treating "on leave" and
+  "suspended" as one state leaves people marked absent who can still sign in — and tools
+  that conflate them will report the job done without doing it. These verbs touch `active`
+  only, and say so when the marker is left behind.
+- **The token has a 90-day sliding expiry that any call renews.** So a scheduled consumer
+  that only calls SCIM when it has work to do will sit untouched for 90 days and then fail
+  at the first real suspension. Call `scim.keepalive()` on every run, including the empty
+  ones, and have `doctor` fail — not warn — when a configured token stops answering.
+
 ## API notes (hard-won)
 
 - `accessibleRange` is 3-valued: `TENANT` / `DOMAIN` / `MEMBER`. New drives default to
@@ -202,6 +276,25 @@ encodes that are easy to get wrong:
 - Upload is 2-step (metadata POST → `uploadUrl` PUT); download is a 302 whose storage
   location **also** requires the Bearer token.
 - `GET /sharedrives` responds `{"sharedrives": [...]}` (docs imply a bare array).
+- **Delegation to a suspended account fails.** Every delegated read of that member —
+  My Drive, received shares, their footprint — becomes unavailable the moment you suspend
+  them. This is the hard version of "collect first, suspend second": it is not that the
+  data is gone, it is that your credential can no longer reach it.
+- `GET /users/me/drive` returns a **drive-only** quota for the delegated member. There is
+  no admin-side endpoint for it and **no mail-volume endpoint at all** — per-member mail
+  usage is visible only in the admin console's statistics. Budget for a console trip.
+- **Distinguish 403 from 404 before concluding an endpoint does not exist.** Mail paths
+  under `/users/me/mail/*` answer `403 has not permission api scope` — they exist and the
+  scope is missing. Invented paths (`/users/me/mailboxes`, `/users/me/storage`) answer
+  `404 Api not exists`. We recorded "there is no mail API" for a while on the strength of
+  a 403, which was simply wrong.
+- A mail scope you have not registered in the console is rejected at **token issue** with
+  `invalid_scope`, not at the endpoint — so a failing token request tells you about console
+  configuration, not about your code.
+- Think twice before adding a mail scope to a *delegatable* app. The same key can act as
+  any member, so mail-read on it is not "read mail" — it is "open every mailbox in the
+  tenant". If you need it, put it on a separate app whose delegation target, retention and
+  audit trail you have decided on first.
 
 ## License
 

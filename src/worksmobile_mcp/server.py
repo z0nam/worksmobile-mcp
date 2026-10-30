@@ -15,7 +15,9 @@ from . import core
 mcp = MCPServer("worksmobile", instructions=(
     "Unofficial NAVER WORKS Drive admin tools (service-account delegation). "
     "Mutating tools require confirm=true — always ask the human user before setting it. "
-    "Drive accessibleRange PATCH transitions are destructive; folder enable breaks inheritance."
+    "Drive accessibleRange PATCH transitions are destructive; folder enable breaks inheritance. "
+    "Account state (suspend/activate/create) runs on a separate SCIM token and is reversible: "
+    "it cannot permanently delete anyone. Collect a member's footprint BEFORE suspending them."
 ))
 
 _CONFIRM = ("confirmation required: this tool changes permissions/sharing. "
@@ -227,6 +229,65 @@ def works_member_footprint(email: str, user: str | None = None,
     if slack_roster_path:
         rosters["chat"] = {"path": slack_roster_path, "key": "email"}
     return d.member_footprint(email, user, rosters)
+
+
+@mcp.tool()
+def works_scim_status() -> dict:
+    """Is the SCIM provisioning plane usable? (account state changes need a separate token)"""
+    from . import scim
+    return scim.status()
+
+
+@mcp.tool()
+def works_user_suspend(email: str, confirm: bool = False) -> dict:
+    """Block a member's login (SCIM `active: false`). Requires confirm=true.
+
+    This is NOT a deletion: data is preserved and the change is reversible with
+    works_user_activate. The token behind this tool is structurally incapable of
+    permanently deleting a member.
+
+    Order matters: run works_member_footprint FIRST. Once the account is suspended,
+    delegation to it fails and you can no longer see what the person could reach.
+
+    Leave of absence is a separate console-only marker — this does not set it, and a
+    member marked on leave may still be able to log in until you suspend them.
+    """
+    if not confirm:
+        return {"error": _CONFIRM}
+    from . import scim
+    return scim.user_set_active(email, False)
+
+
+@mcp.tool()
+def works_user_activate(email: str, confirm: bool = False) -> dict:
+    """Restore a suspended member's login (SCIM `active: true`). Requires confirm=true.
+
+    Cannot revive a deleted account — deletion is irreversible and outside this token.
+    A leave-of-absence marker set in the console survives this and must be cleared there.
+    """
+    if not confirm:
+        return {"error": _CONFIRM}
+    from . import scim
+    return scim.user_set_active(email, True)
+
+
+@mcp.tool()
+def works_user_create(email: str, family_name: str, given_name: str,
+                      personal_email: str | None = None,
+                      confirm: bool = False) -> dict:
+    """Create a member (SCIM). Requires confirm=true — this occupies a real licensed seat.
+
+    Org unit, position, title and employee number are NOT settable over SCIM; the member
+    lands with no org unit until someone assigns one in the admin console.
+
+    `personal_email` is **required on domains where SSO is not enabled** — it receives the
+    password-registration mail, and without SSO the member is created inactive until that
+    is completed. Ask the user for it rather than guessing an address.
+    """
+    if not confirm:
+        return {"error": _CONFIRM}
+    from . import scim
+    return scim.user_create(email, family_name, given_name, personal_email)
 
 
 @mcp.tool()
