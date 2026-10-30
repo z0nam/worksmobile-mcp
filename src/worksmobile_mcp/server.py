@@ -273,16 +273,21 @@ def works_user_activate(email: str, confirm: bool = False) -> dict:
 
 @mcp.tool()
 def works_user_create(email: str, family_name: str, given_name: str,
+                      personal_email: str | None = None,
                       confirm: bool = False) -> dict:
     """Create a member (SCIM). Requires confirm=true — this occupies a real licensed seat.
 
     Org unit, position, title and employee number are NOT settable over SCIM; the member
     lands with no org unit until someone assigns one in the admin console.
+
+    `personal_email` is **required on domains where SSO is not enabled** — it receives the
+    password-registration mail, and without SSO the member is created inactive until that
+    is completed. Ask the user for it rather than guessing an address.
     """
     if not confirm:
         return {"error": _CONFIRM}
     from . import scim
-    return scim.user_create(email, family_name, given_name)
+    return scim.user_create(email, family_name, given_name, personal_email)
 
 
 @mcp.tool()

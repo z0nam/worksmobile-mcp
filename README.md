@@ -102,7 +102,8 @@ worksmobile call GET /users/me/drive/files      # raw API escape hatch
 
 worksmobile suspend alum@corp.com --yes         # block login (reversible, data kept)
 worksmobile activate alum@corp.com --yes        # restore login
-worksmobile member-create new@corp.com --family Kim --given Minji --yes
+worksmobile member-create new@corp.com --family Kim --given Minji \
+    --personal-email minji@gmail.com --yes      # personal mail required without SSO
 ```
 
 All read commands accept `--user someone@corp.com` to act as that member.
@@ -234,6 +235,19 @@ PATCH /scim/v2/Users/{id}   {"op": "replace", "path": "active", "value": false}
 - `userName` is resolved by lookup, never guessed: the SCIM path id is not documented to
   equal the Directory `userId`. Zero matches and two matches are reported differently —
   two accounts sharing a `userName` is an alarm, not an empty result.
+
+Two more things the API does not make obvious:
+
+- **Creating a member needs a personal email on domains without SSO.** `emails` with
+  `type: other` is where the password-registration mail goes, and such a member is created
+  *inactive* until that registration completes. Omitting it there does not lose a field,
+  it fails the creation — so `--personal-email` / `personal_email` exists and is worth
+  asking the user for rather than guessing.
+- **`active` is not a required response field and its default is `true`.** So a re-read
+  that simply does not mention it says *nothing* about login state, and coercing that
+  silence with `bool()` would read it as "suspended" — the exact opposite of the default.
+  `get_active` demands an explicit boolean and raises otherwise: a verification step that
+  invents the answer it was built to check is worse than no verification.
 
 Two traps worth stating plainly:
 

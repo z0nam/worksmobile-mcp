@@ -107,7 +107,11 @@ def main():
 
     p = add("member-create", "create a member (SCIM; org unit must be set in console) [--yes]")
     p.add_argument("email"); p.add_argument("--family", required=True)
-    p.add_argument("--given", required=True); p.add_argument("--yes", action="store_true")
+    p.add_argument("--given", required=True)
+    p.add_argument("--personal-email",
+                   help="personal address for password registration — REQUIRED on "
+                        "domains without SSO (sent as emails[type=other])")
+    p.add_argument("--yes", action="store_true")
 
     p = add("users", "list members")
     p.add_argument("--dept"); p.add_argument("--all", action="store_true")
@@ -180,7 +184,7 @@ def main():
         elif a.cmd == "member-create":
             from . import scim
             _confirm(a, f"[SCIM create] {a.email} ({a.family}{a.given}) — a real seat")
-            _print(scim.user_create(a.email, a.family, a.given))
+            _print(scim.user_create(a.email, a.family, a.given, a.personal_email))
         elif a.cmd == "doctor":
             env = core.load_env()
             print("== config ==")

@@ -135,11 +135,24 @@ def find_id(tok: str, email: str, detail: bool = False):
 
 def get_active(tok: str, scim_id: str) -> bool:
     """Current `active` value. Used to re-read after a write: a 200 on the PATCH does
-    not by itself prove the value changed."""
+    not by itself prove the value changed.
+
+    **Demands an explicit boolean.** `active` is not a required response field and its
+    documented default is `true`, so a missing value is *unobserved state* — and
+    coercing it with `bool()` would turn that silence into `False`, i.e. into "this
+    account is suspended". A verification step that invents the answer it was built to
+    check is worse than no verification, so this raises instead.
+    """
     st, r = call("GET", f"/Users/{scim_id}", tok)
     if st != 200 or not isinstance(r, dict):
         raise RuntimeError(f"SCIM re-read failed {st} {str(r)[:200]}")
-    return bool(r.get("active"))
+    v = r.get("active")
+    if not isinstance(v, bool):
+        raise RuntimeError(
+            f"SCIM re-read did not state `active` for {scim_id} (got {v!r}). The login "
+            "state is unobserved, which is not the same as suspended — the documented "
+            "default is active. Check the admin console before assuming either way.")
+    return v
 
 
 def set_active(tok: str, scim_id: str, active: bool) -> dict:
@@ -152,12 +165,22 @@ def set_active(tok: str, scim_id: str, active: bool) -> dict:
     return r
 
 
-def create_user(tok: str, email: str, family_name: str, given_name: str) -> dict:
+def create_user(tok: str, email: str, family_name: str, given_name: str,
+                personal_email: str | None = None) -> dict:
     """Add a member. Org unit, position and employee number cannot be set over SCIM —
-    assign them in the console afterwards, or the member lands with no org unit."""
+    assign them in the console afterwards, or the member lands with no org unit.
+
+    `personal_email` goes in as `emails: [{"type": "other", ...}]` and is **required on
+    domains where SSO is not enabled**, where it is the address the password-registration
+    mail goes to. Without SSO the member is also created *inactive* and only becomes
+    usable once that registration is completed — so omitting it on such a tenant does not
+    merely lose a field, it makes creation fail.
+    """
     body = {"schemas": [USER_SCHEMA], "userName": email,
             "name": {"familyName": family_name, "givenName": given_name},
             "active": True}
+    if personal_email:
+        body["emails"] = [{"type": "other", "value": personal_email.strip()}]
     st, r = call("POST", "/Users", tok, body=body)
     if not 200 <= st < 300:
         raise RuntimeError(f"SCIM POST /Users -> {st} {str(r)[:200]}")
@@ -198,13 +221,25 @@ def user_set_active(email: str, active: bool) -> dict:
     return out
 
 
-def user_create(email: str, family_name: str, given_name: str) -> dict:
-    """Create a member and say plainly what SCIM could not set."""
-    r = create_user(_token_or_die(), email.strip(), family_name, given_name)
+def user_create(email: str, family_name: str, given_name: str,
+                personal_email: str | None = None) -> dict:
+    """Create a member and say plainly what SCIM could not set.
+
+    On a domain without SSO, `personal_email` is required — see `create_user`.
+    """
+    r = create_user(_token_or_die(), email.strip(), family_name, given_name,
+                    personal_email)
+    note = ("Org unit, position, title and employee number are NOT settable over SCIM — "
+            "assign them in the admin console, otherwise the member has no org unit.")
+    if personal_email:
+        note += (" A personal email was registered for password setup; without SSO the "
+                 "member stays inactive until that registration is completed.")
+    else:
+        note += (" No personal email was given: fine with SSO, but on a domain without "
+                 "SSO it is required for password registration and creation will have "
+                 "been rejected.")
     return {"email": email, "scim_id": r.get("id") if isinstance(r, dict) else None,
-            "note": ("Created and active. Org unit, position, title and employee number "
-                     "are NOT settable over SCIM — assign them in the admin console, "
-                     "otherwise the member has no org unit.")}
+            "note": note}
 
 
 def status() -> dict:
