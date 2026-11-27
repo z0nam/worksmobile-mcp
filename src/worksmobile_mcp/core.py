@@ -85,10 +85,21 @@ def call(method: str, path: str, token: str, params: dict | None = None, body=No
     })
     try:
         with urlopen(req) as r:
-            raw = r.read().decode()
-            return r.status, (json.loads(raw) if raw else None)
+            data = r.read()
+            if not data:
+                return r.status, None
+            try:
+                raw = data.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                return r.status, data  # binary or non-UTF-8 text: raw bytes, undamaged
+            try:
+                return r.status, json.loads(raw)
+            except ValueError:
+                # Some 2xx bodies are not JSON (e.g. /audits/logs/download returns
+                # BOM-prefixed CSV). Hand the text back; interpreting it is the caller's job.
+                return r.status, raw
     except HTTPError as e:
-        raw = e.read().decode()
+        raw = e.read().decode("utf-8-sig", "replace")
         try:
             return e.code, json.loads(raw)
         except Exception:

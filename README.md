@@ -295,6 +295,11 @@ Two traps worth stating plainly:
   any member, so mail-read on it is not "read mail" — it is "open every mailbox in the
   tenant". If you need it, put it on a separate app whose delegation target, retention and
   audit trail you have decided on first.
+- **Not every 2xx body is JSON.** `GET /audits/logs/download` answers `text/csv` with a
+  UTF-8 BOM directly (not a download URL), so `call()` decodes with `utf-8-sig` and returns
+  non-JSON 2xx bodies as plain text. That endpoint also ignores user-filter parameters
+  (and unknown parameters in general), so filtering by actor has to happen client-side.
+  Note that each query is itself recorded as an audit entry.
 
 ## License
 
