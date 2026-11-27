@@ -85,9 +85,13 @@ def call(method: str, path: str, token: str, params: dict | None = None, body=No
     })
     try:
         with urlopen(req) as r:
-            raw = r.read().decode("utf-8-sig")
-            if not raw:
+            data = r.read()
+            if not data:
                 return r.status, None
+            try:
+                raw = data.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                return r.status, data  # binary or non-UTF-8 text: raw bytes, undamaged
             try:
                 return r.status, json.loads(raw)
             except ValueError:
